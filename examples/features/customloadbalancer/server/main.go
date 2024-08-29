@@ -16,6 +16,11 @@
  *
  */
 
+/*
+Package main implements a gRPC server running on multiple addresses, providing
+an Echo service. It sets up servers on specified addresses, handles unary RPC
+requests, and concurrently runs all servers.
+*/
 package main
 
 import (

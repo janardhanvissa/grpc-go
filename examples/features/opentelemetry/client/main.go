@@ -16,6 +16,12 @@
  *
  */
 
+/*
+Package main implements a gRPC client that performs periodic RPC calls and
+collects metrics using OpenTelemetry. The client connects to a server, sends
+unary RPC requests every second, and exports metrics to Prometheus via a
+specified endpoint.
+*/
 package main
 
 import (
