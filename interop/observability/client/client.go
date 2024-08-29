@@ -16,6 +16,11 @@
  *
  */
 
+/*
+Package main is a gRPC client for running various interop test cases against a
+server. It supports different test cases and integrates with observability tools,
+including a delay before shutdown.
+*/
 package main
 
 import (

@@ -16,6 +16,11 @@
  *
  */
 
+/*
+Package main provides a gRPC server with observability features, using gRPC's
+observability package. It sets up and serves the TestService, and stops
+gracefully upon exit.
+*/
 package main
 
 import (

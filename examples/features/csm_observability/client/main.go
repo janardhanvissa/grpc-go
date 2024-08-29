@@ -16,6 +16,11 @@
  *
  */
 
+/*
+Package main implements a gRPC client with xDS support, observability via
+OpenTelemetry, and Prometheus metrics export. It continuously performs unary
+RPC calls to a server and exposes metrics through a Prometheus endpoint.
+*/
 package main
 
 import (

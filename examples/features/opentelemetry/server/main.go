@@ -16,6 +16,12 @@
  *
  */
 
+/*
+Package main implements a gRPC server with OpenTelemetry metrics integration.
+The server listens on a specified address, provides an Echo service, and exposes
+metrics via Prometheus. It sets up the Prometheus exporter and OpenTelemetry
+metrics provider, and starts both the gRPC server and the HTTP server for metrics.
+*/
 package main
 
 import (
