@@ -34,6 +34,12 @@ type mockCertProvider struct {
 	id int
 }
 
+func (d *mockCertProvider) KeyMaterial(ctx context.Context) (*certprovider.KeyMaterial, error) {
+	return &certprovider.KeyMaterial{}, nil
+}
+
+func (d *mockCertProvider) Close() {}
+
 func TestDNSMatch(t *testing.T) {
 	tests := []struct {
 		desc      string
@@ -312,40 +318,40 @@ func TestHandshakeInfo_Equal(t *testing.T) {
 	mockProvider2 := &mockCertProvider{id: 2}
 
 	tests := []struct {
-		desc     string
-		hi1      *HandshakeInfo
-		hi2      *HandshakeInfo
-		expected bool
+		desc      string
+		hi1       *HandshakeInfo
+		hi2       *HandshakeInfo
+		wantMatch bool
 	}{
 		{
-			desc:     "both HandshakeInfo are nil",
-			hi1:      nil,
-			hi2:      nil,
-			expected: true,
+			desc:      "both HandshakeInfo are nil",
+			hi1:       nil,
+			hi2:       nil,
+			wantMatch: true,
 		},
 		{
-			desc:     "one HandshakeInfo is nil",
-			hi1:      nil,
-			hi2:      NewHandshakeInfo(mockProvider1, nil, nil, false),
-			expected: false,
+			desc:      "one HandshakeInfo is nil",
+			hi1:       nil,
+			hi2:       NewHandshakeInfo(mockProvider1, nil, nil, false),
+			wantMatch: false,
 		},
 		{
-			desc:     "different root providers",
-			hi1:      NewHandshakeInfo(mockProvider1, nil, nil, false),
-			hi2:      NewHandshakeInfo(mockProvider2, nil, nil, false),
-			expected: false,
+			desc:      "different root providers",
+			hi1:       NewHandshakeInfo(mockProvider1, nil, nil, false),
+			hi2:       NewHandshakeInfo(mockProvider2, nil, nil, false),
+			wantMatch: false,
 		},
 		{
-			desc:     "different identity providers",
-			hi1:      NewHandshakeInfo(nil, mockProvider1, nil, false),
-			hi2:      NewHandshakeInfo(nil, mockProvider2, nil, false),
-			expected: false,
+			desc:      "different identity providers",
+			hi1:       NewHandshakeInfo(nil, mockProvider1, nil, false),
+			hi2:       NewHandshakeInfo(nil, mockProvider2, nil, false),
+			wantMatch: false,
 		},
 		{
-			desc:     "same providers and SAN matchers",
-			hi1:      NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
-			hi2:      NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
-			expected: true,
+			desc:      "same providers and SAN matchers",
+			hi1:       NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
+			hi2:       NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
+			wantMatch: true,
 		},
 		{
 			desc: "different SAN matchers",
@@ -355,7 +361,7 @@ func TestHandshakeInfo_Equal(t *testing.T) {
 			hi2: NewHandshakeInfo(mockProvider1, mockProvider1, []matcher.StringMatcher{
 				matcher.StringMatcherForTesting(newStringP("bar.com"), nil, nil, nil, nil, false),
 			}, false),
-			expected: false,
+			wantMatch: false,
 		},
 		{
 			desc: "same SAN matchers",
@@ -365,13 +371,13 @@ func TestHandshakeInfo_Equal(t *testing.T) {
 			hi2: NewHandshakeInfo(mockProvider1, mockProvider1, []matcher.StringMatcher{
 				matcher.StringMatcherForTesting(newStringP("foo.com"), nil, nil, nil, nil, false),
 			}, false),
-			expected: true,
+			wantMatch: true,
 		},
 		{
-			desc:     "different requireClientCert flag",
-			hi1:      NewHandshakeInfo(mockProvider1, mockProvider1, nil, true),
-			hi2:      NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
-			expected: false,
+			desc:      "different requireClientCert flag",
+			hi1:       NewHandshakeInfo(mockProvider1, mockProvider1, nil, true),
+			hi2:       NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
+			wantMatch: false,
 		},
 		{
 			desc: "same rootProvider but different mockCertProvider state",
@@ -387,13 +393,13 @@ func TestHandshakeInfo_Equal(t *testing.T) {
 				sanMatchers:       nil,
 				requireClientCert: false,
 			},
-			expected: false,
+			wantMatch: false,
 		},
 		{
-			desc:     "identical mockCertProvider instances",
-			hi1:      NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
-			hi2:      NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
-			expected: true,
+			desc:      "identical mockCertProvider instances",
+			hi1:       NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
+			hi2:       NewHandshakeInfo(mockProvider1, mockProvider1, nil, false),
+			wantMatch: true,
 		},
 		{
 			desc: "same SAN matchers with different content",
@@ -404,22 +410,16 @@ func TestHandshakeInfo_Equal(t *testing.T) {
 				matcher.StringMatcherForTesting(newStringP("foo.com"), nil, nil, nil, nil, false),
 				matcher.StringMatcherForTesting(newStringP("bar.com"), nil, nil, nil, nil, false),
 			}, false),
-			expected: false,
+			wantMatch: false,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			got := test.hi1.Equal(test.hi2)
-			if got != test.expected {
-				t.Errorf("hi1.Equal(hi2) = %v; want %v", got, test.expected)
+			if got != test.wantMatch {
+				t.Errorf("want %v; hi1.Equal(hi2) = %v", test.wantMatch, got)
 			}
 		})
 	}
 }
-
-func (d *mockCertProvider) KeyMaterial(ctx context.Context) (*certprovider.KeyMaterial, error) {
-	return &certprovider.KeyMaterial{}, nil
-}
-
-func (d *mockCertProvider) Close() {}
