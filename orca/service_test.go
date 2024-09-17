@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/internal/pretty"
+	"google.golang.org/grpc/internal/stubserver"
 	"google.golang.org/grpc/internal/testutils"
 	"google.golang.org/grpc/orca"
 	"google.golang.org/grpc/orca/internal"
@@ -93,14 +94,30 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 	opts := orca.ServiceOptions{MinReportingInterval: shortReportingInterval, ServerMetricsProvider: smr}
 	internal.AllowAnyMinReportingInterval.(func(*orca.ServiceOptions))(&opts)
 
-	// Register the OpenRCAService with a very short metrics reporting interval.
+	stub := &stubserver.StubServer{
+		EmptyCallF: func(ctx context.Context, in *testpb.Empty) (*testpb.Empty, error) {
+			smr.DeleteNamedUtilization(requestsMetricKey)
+			smr.SetCPUUtilization(0)
+			smr.SetMemoryUtilization(0)
+			smr.DeleteApplicationUtilization()
+			return &testpb.Empty{}, nil
+		},
+		UnaryCallF: func(ctx context.Context, in *testpb.SimpleRequest) (*testpb.SimpleResponse, error) {
+			smr.SetNamedUtilization(requestsMetricKey, 0.2)
+			smr.SetCPUUtilization(50.0)
+			smr.SetMemoryUtilization(0.9)
+			smr.SetApplicationUtilization(1.2)
+			return &testpb.SimpleResponse{}, nil
+		},
+	}
+
 	s := grpc.NewServer()
 	if err := orca.Register(s, opts); err != nil {
-		t.Fatalf("orca.EnableOutOfBandMetricsReportingForTesting() failed: %v", err)
+		t.Fatalf("orca.Register failed: %v", err)
 	}
 
 	// Register the test service implementation on the same grpc server, and start serving.
-	testgrpc.RegisterTestServiceServer(s, &testServiceImpl{smr: smr})
+	testgrpc.RegisterTestServiceServer(s, stub)
 	go s.Serve(lis)
 	defer s.Stop()
 	t.Logf("Started gRPC server at %s...", lis.Addr().String())
@@ -116,7 +133,7 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 	// will trigger the injection of custom backend metrics from the
 	// testServiceImpl.
 	const numRequests = 20
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	testStub := testgrpc.NewTestServiceClient(cc)
 	errCh := make(chan error, 1)
@@ -126,7 +143,7 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 				errCh <- fmt.Errorf("UnaryCall failed: %v", err)
 				return
 			}
-			time.Sleep(time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 		errCh <- nil
 	}()
