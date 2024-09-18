@@ -94,6 +94,7 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 	opts := orca.ServiceOptions{MinReportingInterval: shortReportingInterval, ServerMetricsProvider: smr}
 	internal.AllowAnyMinReportingInterval.(func(*orca.ServiceOptions))(&opts)
 
+	blockCh := make(chan struct{})
 	stub := &stubserver.StubServer{
 		EmptyCallF: func(ctx context.Context, in *testpb.Empty) (*testpb.Empty, error) {
 			smr.DeleteNamedUtilization(requestsMetricKey)
@@ -107,6 +108,7 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 			smr.SetCPUUtilization(50.0)
 			smr.SetMemoryUtilization(0.9)
 			smr.SetApplicationUtilization(1.2)
+			<-blockCh
 			return &testpb.SimpleResponse{}, nil
 		},
 	}
@@ -185,6 +187,8 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 		// This means that we received the metrics which we expected.
 		break
 	}
+
+	close(blockCh)
 
 	// The EmptyCall RPC is expected to delete earlier injected metrics.
 	if _, err := testStub.EmptyCall(ctx, &testpb.Empty{}); err != nil {
