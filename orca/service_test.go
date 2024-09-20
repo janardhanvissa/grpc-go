@@ -45,37 +45,6 @@ import (
 
 const requestsMetricKey = "test-service-requests"
 
-// An implementation of grpc_testing.TestService for the purpose of this test.
-// We cannot use the StubServer approach here because we need to register the
-// OpenRCAService as well on the same gRPC server.
-type testServiceImpl struct {
-	mu       sync.Mutex
-	requests int64
-
-	testgrpc.TestServiceServer
-	smr orca.ServerMetricsRecorder
-}
-
-func (t *testServiceImpl) UnaryCall(context.Context, *testpb.SimpleRequest) (*testpb.SimpleResponse, error) {
-	t.mu.Lock()
-	t.requests++
-	t.mu.Unlock()
-
-	t.smr.SetNamedUtilization(requestsMetricKey, float64(t.requests)*0.01)
-	t.smr.SetCPUUtilization(50.0)
-	t.smr.SetMemoryUtilization(0.9)
-	t.smr.SetApplicationUtilization(1.2)
-	return &testpb.SimpleResponse{}, nil
-}
-
-func (t *testServiceImpl) EmptyCall(context.Context, *testpb.Empty) (*testpb.Empty, error) {
-	t.smr.DeleteNamedUtilization(requestsMetricKey)
-	t.smr.SetCPUUtilization(0)
-	t.smr.SetMemoryUtilization(0)
-	t.smr.DeleteApplicationUtilization()
-	return &testpb.Empty{}, nil
-}
-
 // TestE2E_CustomBackendMetrics_OutOfBand tests the injection of out-of-band
 // custom backend metrics from the server application, and verifies that
 // expected load reports are received at the client.
@@ -90,11 +59,14 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 
 	// Override the min reporting interval in the internal package.
 	const shortReportingInterval = 10 * time.Millisecond
+	const sleepDuration = time.Millisecond
 	smr := orca.NewServerMetricsRecorder()
 	opts := orca.ServiceOptions{MinReportingInterval: shortReportingInterval, ServerMetricsProvider: smr}
 	internal.AllowAnyMinReportingInterval.(func(*orca.ServiceOptions))(&opts)
 
-	blockCh := make(chan struct{})
+	var mu sync.Mutex
+	var requests int
+
 	stub := &stubserver.StubServer{
 		EmptyCallF: func(ctx context.Context, in *testpb.Empty) (*testpb.Empty, error) {
 			smr.DeleteNamedUtilization(requestsMetricKey)
@@ -108,14 +80,13 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 			smr.SetCPUUtilization(50.0)
 			smr.SetMemoryUtilization(0.9)
 			smr.SetApplicationUtilization(1.2)
-			<-blockCh
 			return &testpb.SimpleResponse{}, nil
 		},
 	}
 
 	s := grpc.NewServer()
 	if err := orca.Register(s, opts); err != nil {
-		t.Fatalf("orca.Register failed: %v", err)
+		t.Fatalf("orca.EnableOutOfBandMetricsReportingForTesting() failed: %v", err)
 	}
 
 	// Register the test service implementation on the same grpc server, and start serving.
@@ -145,7 +116,10 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 				errCh <- fmt.Errorf("UnaryCall failed: %v", err)
 				return
 			}
-			time.Sleep(10 * time.Millisecond)
+			mu.Lock()
+			requests++
+			mu.Unlock()
+			time.Sleep(sleepDuration)
 		}
 		errCh <- nil
 	}()
@@ -170,25 +144,27 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 		default:
 		}
 
-		wantProto := &v3orcapb.OrcaLoadReport{
-			CpuUtilization:         50.0,
-			MemUtilization:         0.9,
-			ApplicationUtilization: 1.2,
-			Utilization:            map[string]float64{requestsMetricKey: numRequests * 0.01},
+		mu.Lock()
+		if requests == numRequests {
+			mu.Unlock()
+			break
 		}
-		gotProto, err := stream.Recv()
-		if err != nil {
-			t.Fatalf("Recv() failed: %v", err)
-		}
-		if !cmp.Equal(gotProto, wantProto, cmp.Comparer(proto.Equal)) {
-			t.Logf("Received load report from stream: %s, want: %s", pretty.ToJSON(gotProto), pretty.ToJSON(wantProto))
-			continue
-		}
-		// This means that we received the metrics which we expected.
-		break
+		mu.Unlock()
 	}
 
-	close(blockCh)
+	wantProto := &v3orcapb.OrcaLoadReport{
+		CpuUtilization:         50.0,
+		MemUtilization:         0.9,
+		ApplicationUtilization: 1.2,
+		Utilization:            map[string]float64{requestsMetricKey: numRequests * 0.01},
+	}
+	gotProto, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Recv() failed: %v", err)
+	}
+	if !cmp.Equal(gotProto, wantProto, cmp.Comparer(proto.Equal)) {
+		t.Logf("Received load report from stream: %s, want: %s", pretty.ToJSON(gotProto), pretty.ToJSON(wantProto))
+	}
 
 	// The EmptyCall RPC is expected to delete earlier injected metrics.
 	if _, err := testStub.EmptyCall(ctx, &testpb.Empty{}); err != nil {
@@ -203,8 +179,8 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 		default:
 		}
 
-		wantProto := &v3orcapb.OrcaLoadReport{}
-		gotProto, err := stream.Recv()
+		wantProto = &v3orcapb.OrcaLoadReport{}
+		gotProto, err = stream.Recv()
 		if err != nil {
 			t.Fatalf("Recv() failed: %v", err)
 		}
