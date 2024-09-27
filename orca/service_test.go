@@ -59,7 +59,6 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 
 	// Override the min reporting interval in the internal package.
 	const shortReportingInterval = 10 * time.Millisecond
-	const sleepDuration = time.Millisecond
 	smr := orca.NewServerMetricsRecorder()
 	opts := orca.ServiceOptions{MinReportingInterval: shortReportingInterval, ServerMetricsProvider: smr}
 	internal.AllowAnyMinReportingInterval.(func(*orca.ServiceOptions))(&opts)
@@ -119,7 +118,7 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 			mu.Lock()
 			requests++
 			mu.Unlock()
-			time.Sleep(sleepDuration)
+			time.Sleep(shortReportingInterval)
 		}
 		errCh <- nil
 	}()
