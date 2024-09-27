@@ -106,7 +106,7 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 	// will trigger the injection of custom backend metrics from the
 	// testServiceImpl.
 	const numRequests = 20
-	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	testStub := testgrpc.NewTestServiceClient(cc)
 	errCh := make(chan error, 1)
