@@ -150,20 +150,23 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 			break
 		}
 		mu.Unlock()
-	}
 
-	wantProto := &v3orcapb.OrcaLoadReport{
-		CpuUtilization:         50.0,
-		MemUtilization:         0.9,
-		ApplicationUtilization: 1.2,
-		Utilization:            map[string]float64{requestsMetricKey: numRequests * 0.01},
-	}
-	gotProto, err := stream.Recv()
-	if err != nil {
-		t.Fatalf("Recv() failed: %v", err)
-	}
-	if !cmp.Equal(gotProto, wantProto, cmp.Comparer(proto.Equal)) {
-		t.Logf("Received load report from stream: %s, want: %s", pretty.ToJSON(gotProto), pretty.ToJSON(wantProto))
+		wantProto := &v3orcapb.OrcaLoadReport{
+			CpuUtilization:         50.0,
+			MemUtilization:         0.9,
+			ApplicationUtilization: 1.2,
+			Utilization:            map[string]float64{requestsMetricKey: numRequests * 0.01},
+		}
+		gotProto, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("Recv() failed: %v", err)
+		}
+		if !cmp.Equal(gotProto, wantProto, cmp.Comparer(proto.Equal)) {
+			t.Logf("Received load report from stream: %s, want: %s", pretty.ToJSON(gotProto), pretty.ToJSON(wantProto))
+			continue
+		}
+		// This means that we received the metrics which we expected.
+		break
 	}
 
 	// The EmptyCall RPC is expected to delete earlier injected metrics.
@@ -179,8 +182,8 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 		default:
 		}
 
-		wantProto = &v3orcapb.OrcaLoadReport{}
-		gotProto, err = stream.Recv()
+		wantProto := &v3orcapb.OrcaLoadReport{}
+		gotProto, err := stream.Recv()
 		if err != nil {
 			t.Fatalf("Recv() failed: %v", err)
 		}
