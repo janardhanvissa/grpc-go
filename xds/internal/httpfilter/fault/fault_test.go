@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/internal/grpctest"
+	"google.golang.org/grpc/internal/stubserver"
 	"google.golang.org/grpc/internal/testutils"
 	"google.golang.org/grpc/internal/testutils/xds/e2e"
 	"google.golang.org/grpc/metadata"
@@ -106,9 +107,24 @@ func clientSetup(t *testing.T) (*e2e.ManagementServer, string, uint32, func()) {
 	bootstrapContents := e2e.DefaultBootstrapContents(t, nodeID, managementServer.Address)
 	testutils.CreateBootstrapFileForTesting(t, bootstrapContents)
 
+	stub := stubserver.StubServer{
+		EmptyCallF: func(context.Context, *testpb.Empty) (*testpb.Empty, error) {
+			return &testpb.Empty{}, nil
+		},
+		FullDuplexCallF: func(stream testgrpc.TestService_FullDuplexCallServer) error {
+			// End RPC after client does a CloseSend.
+			for {
+				if _, err := stream.Recv(); err == io.EOF {
+					return nil
+				} else if err != nil {
+					return err
+				}
+			}
+		},
+	}
 	// Initialize a gRPC server and register the stubServer on it.
 	server := grpc.NewServer()
-	testgrpc.RegisterTestServiceServer(server, &testService{})
+	testgrpc.RegisterTestServiceServer(server, &stub)
 
 	// Create a local listener and pass it to Serve().
 	lis, err := testutils.LocalTCPListener()
