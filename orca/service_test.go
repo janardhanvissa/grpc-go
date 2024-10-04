@@ -63,6 +63,7 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 	opts := orca.ServiceOptions{MinReportingInterval: shortReportingInterval, ServerMetricsProvider: smr}
 	internal.AllowAnyMinReportingInterval.(func(*orca.ServiceOptions))(&opts)
 
+	// Register the OpenRCAService with a very short metrics reporting interval.
 	var mu sync.Mutex
 	var requests int
 
