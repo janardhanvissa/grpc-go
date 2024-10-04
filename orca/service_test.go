@@ -75,10 +75,13 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 			return &testpb.Empty{}, nil
 		},
 		UnaryCallF: func(ctx context.Context, in *testpb.SimpleRequest) (*testpb.SimpleResponse, error) {
-			smr.SetNamedUtilization(requestsMetricKey, 0.2)
+			mu.Lock()
+			requests++
+			smr.SetNamedUtilization(requestsMetricKey, float64(requests)*0.01)
 			smr.SetCPUUtilization(50.0)
 			smr.SetMemoryUtilization(0.9)
 			smr.SetApplicationUtilization(1.2)
+			mu.Unlock()
 			return &testpb.SimpleResponse{}, nil
 		},
 	}
@@ -101,9 +104,9 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 	}
 	defer cc.Close()
 
-	// Spawn a goroutine which sends 20 unary RPCs to the test server. This
+	// Spawn a goroutine which sends 20 unary RPCs to the stub server. This
 	// will trigger the injection of custom backend metrics from the
-	// testServiceImpl.
+	// stubserver.
 	const numRequests = 20
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -115,9 +118,6 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 				errCh <- fmt.Errorf("UnaryCall failed: %v", err)
 				return
 			}
-			mu.Lock()
-			requests++
-			mu.Unlock()
 			time.Sleep(shortReportingInterval)
 		}
 		errCh <- nil
@@ -154,7 +154,7 @@ func (s) TestE2E_CustomBackendMetrics_OutOfBand(t *testing.T) {
 			CpuUtilization:         50.0,
 			MemUtilization:         0.9,
 			ApplicationUtilization: 1.2,
-			Utilization:            map[string]float64{requestsMetricKey: numRequests * 0.01},
+			Utilization:            map[string]float64{requestsMetricKey: float64(requests) * 0.01},
 		}
 		gotProto, err := stream.Recv()
 		if err != nil {
