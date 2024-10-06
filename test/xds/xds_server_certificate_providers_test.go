@@ -162,8 +162,11 @@ func (s) TestServerSideXDS_WithNoCertificateProvidersInBootstrap_Failure(t *test
 	if err != nil {
 		t.Fatalf("Failed to create an xDS enabled gRPC server: %v", err)
 	}
-	testgrpc.RegisterTestServiceServer(server, &stubserver.StubServer{})
 	defer server.Stop()
+
+	stub := &stubserver.StubServer{}
+	stub.S = server
+	stubserver.StartTestService(t, stub)
 
 	// Create a local listener and pass it to Serve().
 	lis, err := testutils.LocalTCPListener()
@@ -270,8 +273,8 @@ func (s) TestServerSideXDS_WithValidAndInvalidSecurityConfiguration(t *testing.T
 	}
 
 	// Create an xDS-enabled grpc server that is configured to use xDS
-	// credentials, and register the test service on it. Configure a mode change
-	// option that closes a channel when listener2 enter serving mode.
+	// credentials, and configure a mode change option that closes a channel
+	// when listener2 enters serving mode.
 	creds, err := xdscreds.NewServerCredentials(xdscreds.ServerOptions{FallbackCreds: insecure.NewCredentials()})
 	if err != nil {
 		t.Fatal(err)
@@ -293,8 +296,11 @@ func (s) TestServerSideXDS_WithValidAndInvalidSecurityConfiguration(t *testing.T
 	if err != nil {
 		t.Fatalf("Failed to create an xDS enabled gRPC server: %v", err)
 	}
-	testgrpc.RegisterTestServiceServer(server, stub)
 	defer server.Stop()
+
+	// Start the test service using the new helper function.
+	stub.S = server
+	stubserver.StartTestService(t, stub)
 
 	go func() {
 		if err := server.Serve(lis1); err != nil {

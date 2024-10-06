@@ -323,7 +323,10 @@ func setupGRPCServerWithModeChangeChannelAndServe(t *testing.T, bootstrapContent
 		t.Fatalf("Failed to create an xDS enabled gRPC server: %v", err)
 	}
 	t.Cleanup(server.Stop)
-	testgrpc.RegisterTestServiceServer(server, stub)
+
+	// Set the server in the stub and start the test service.
+	stub.S = server
+	stubserver.StartTestService(t, stub)
 
 	// Serve.
 	go func() {
