@@ -107,7 +107,7 @@ func clientSetup(t *testing.T) (*e2e.ManagementServer, string, uint32, func()) {
 	bootstrapContents := e2e.DefaultBootstrapContents(t, nodeID, managementServer.Address)
 	testutils.CreateBootstrapFileForTesting(t, bootstrapContents)
 
-	stub := stubserver.StubServer{
+	stub := &stubserver.StubServer{
 		EmptyCallF: func(context.Context, *testpb.Empty) (*testpb.Empty, error) {
 			return &testpb.Empty{}, nil
 		},
@@ -124,7 +124,10 @@ func clientSetup(t *testing.T) (*e2e.ManagementServer, string, uint32, func()) {
 	}
 	// Initialize a gRPC server and register the stubServer on it.
 	server := grpc.NewServer()
-	testgrpc.RegisterTestServiceServer(server, &stub)
+
+	// Start the test service using the helper function.
+	stub.S = server
+	stubserver.StartTestService(t, stub)
 
 	// Create a local listener and pass it to Serve().
 	lis, err := testutils.LocalTCPListener()

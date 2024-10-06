@@ -104,7 +104,11 @@ func (s) TestServeLDSRDS(t *testing.T) {
 		t.Fatalf("Failed to create an xDS enabled gRPC server: %v", err)
 	}
 	defer server.Stop()
-	testgrpc.RegisterTestServiceServer(server, stub)
+
+	// Start the test service using the helper function.
+	stub.S = server
+	stubserver.StartTestService(t, stub)
+
 	go func() {
 		if err := server.Serve(lis); err != nil {
 			t.Errorf("Serve() failed: %v", err)
@@ -217,7 +221,11 @@ func (s) TestRDSNack(t *testing.T) {
 		t.Fatalf("Failed to create an xDS enabled gRPC server: %v", err)
 	}
 	defer server.Stop()
-	testgrpc.RegisterTestServiceServer(server, stub)
+
+	// Start the test service using the helper function.
+	stub.S = server
+	stubserver.StartTestService(t, stub)
+
 	go func() {
 		if err := server.Serve(lis); err != nil {
 			t.Errorf("Serve() failed: %v", err)
@@ -288,7 +296,11 @@ func (s) TestMultipleUpdatesImmediatelySwitch(t *testing.T) {
 		t.Fatalf("Failed to create an xDS enabled gRPC server: %v", err)
 	}
 	defer server.Stop()
-	testgrpc.RegisterTestServiceServer(server, stub)
+
+	// Start the test service using the helper function.
+	stub.S = server
+	stubserver.StartTestService(t, stub)
+
 	go func() {
 		if err := server.Serve(lis); err != nil {
 			t.Errorf("Serve() failed: %v", err)
