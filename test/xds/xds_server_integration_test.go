@@ -97,6 +97,8 @@ func setupGRPCServer(t *testing.T, bootstrapContents []byte) (net.Listener, func
 	if err != nil {
 		t.Fatalf("Failed to create an xDS enabled gRPC server: %v", err)
 	}
+
+	// Set the server in the stub and start the test service.
 	stub.S = server
 	stubserver.StartTestService(t, stub)
 

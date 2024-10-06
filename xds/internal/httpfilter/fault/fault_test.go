@@ -68,25 +68,6 @@ func Test(t *testing.T) {
 	grpctest.RunSubTests(t, s{})
 }
 
-type testService struct {
-	testgrpc.TestServiceServer
-}
-
-func (*testService) EmptyCall(context.Context, *testpb.Empty) (*testpb.Empty, error) {
-	return &testpb.Empty{}, nil
-}
-
-func (*testService) FullDuplexCall(stream testgrpc.TestService_FullDuplexCallServer) error {
-	// End RPC after client does a CloseSend.
-	for {
-		if _, err := stream.Recv(); err == io.EOF {
-			return nil
-		} else if err != nil {
-			return err
-		}
-	}
-}
-
 // clientSetup performs a bunch of steps common to all xDS server tests here:
 // - spin up an xDS management server on a local port
 // - spin up a gRPC server and register the test service on it
@@ -125,7 +106,7 @@ func clientSetup(t *testing.T) (*e2e.ManagementServer, string, uint32, func()) {
 	// Initialize a gRPC server and register the stubServer on it.
 	server := grpc.NewServer()
 
-	// Start the test service using the helper function.
+	// Set the server in the stub and start the test service.
 	stub.S = server
 	stubserver.StartTestService(t, stub)
 
