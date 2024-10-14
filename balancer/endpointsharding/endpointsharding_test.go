@@ -184,14 +184,59 @@ func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 	}
 
 	cc.Connect()
-	if state := cc.GetState(); state != connectivity.TransientFailure {
-		t.Fatalf("Expected state TransientFailure after Connect(), got %v", state)
+	state := cc.GetState()
+	if state != connectivity.Connecting && state != connectivity.TransientFailure {
+		t.Fatalf("Expected state Connecting or TransientFailure after Connect(), got %v", state)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	testutils.AwaitState(ctx, t, cc, connectivity.TransientFailure)
+	// Allow the state to transition either to Connecting or TransientFailure.
+	if state == connectivity.Connecting {
+		testutils.AwaitState(ctx, t, cc, connectivity.TransientFailure)
+	}
+
+	// Perform an RPC in a separate goroutine.
+	errChan := make(chan error, 1)
+	go func() {
+		_, err := testgrpc.NewTestServiceClient(cc).EmptyCall(context.Background(), &testgrpc.Empty{})
+		if err == nil {
+			errChan <- fmt.Errorf("expected RPC to fail, but it succeeded")
+		} else {
+			errChan <- nil
+		}
+	}()
+
+	if err := <-errChan; err != nil {
+		t.Fatal(err)
+	}
+
+	if state := cc.GetState(); state != connectivity.TransientFailure {
+		t.Fatalf("Expected state TransientFailure, got %v", state)
+	}
+
+	if enterFunc, ok := internal.EnterIdleModeForTesting.(func(*grpc.ClientConn)); ok {
+		enterFunc(cc)
+	} else {
+		t.Fatalf("internal.EnterIdleModeForTesting is not callable")
+	}
+
+	state = cc.GetState()
+	if state != connectivity.Idle && state != connectivity.TransientFailure {
+		t.Fatalf("Expected state Idle or TransientFailure after entering idle mode, got %v", state)
+	}
+
+	cc.Connect()
+	state = cc.GetState()
+	if state != connectivity.Connecting && state != connectivity.TransientFailure {
+		t.Fatalf("Expected state Connecting or TransientFailure after Connect(), got %v", state)
+	}
+
+	// If the state is Connecting, wait for it to transition to TransientFailure again.
+	if state == connectivity.Connecting {
+		testutils.AwaitState(ctx, t, cc, connectivity.TransientFailure)
+	}
 
 	mr.UpdateState(resolver.State{
 		Endpoints: []resolver.Endpoint{
