@@ -197,7 +197,6 @@ func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 		testutils.AwaitState(ctx, t, cc, connectivity.TransientFailure)
 	}
 
-	// Perform an RPC in a separate goroutine.
 	errChan := make(chan error, 1)
 	go func() {
 		_, err := testgrpc.NewTestServiceClient(cc).EmptyCall(context.Background(), &testgrpc.Empty{})
