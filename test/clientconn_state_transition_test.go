@@ -621,8 +621,8 @@ func (s) TestConnectivityStateSubscriber(t *testing.T) {
 	}
 }
 
-// TestInitialChannelStateWaitingForFirstResolverUpdate verifies the initial state of the channel
-// when a manual name resolver doesn't provide any updates.
+// TestInitialChannelStateWaitingForFirstResolverUpdate verifies the initial
+// state of the channel when a manual name resolver doesn't provide any updates.
 func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 	backend := stubserver.StartTestService(t, nil)
 	defer backend.Stop()
@@ -661,6 +661,6 @@ func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 			t.Errorf("Expected RPC to fail with code Unavailable or Canceled, got %v", err)
 		}
 	}()
-
+	//Await No state change when there is a context connecting to idle
 	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
 }
