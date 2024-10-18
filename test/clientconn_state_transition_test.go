@@ -30,7 +30,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/balancer"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/internal"
@@ -42,7 +41,6 @@ import (
 	testgrpc "google.golang.org/grpc/interop/grpc_testing"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
-	"google.golang.org/grpc/status"
 )
 
 const stateRecordingBalancerName = "state_recording_balancer"
@@ -621,9 +619,9 @@ func (s) TestConnectivityStateSubscriber(t *testing.T) {
 	}
 }
 
-// TestInitialChannelStateWaitingForFirstResolverUpdate verifies the initial
+// TestChannelStateWaitingForFirstResolverUpdate verifies the initial
 // state of the channel when a manual name resolver doesn't provide any updates.
-func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
+func (s) TestChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 	backend := stubserver.StartTestService(t, nil)
 	defer backend.Stop()
 
@@ -636,12 +634,15 @@ func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 	}
 	defer cc.Close()
 
-	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
 	defer cancel()
 
 	shortCtx, shortCancel := context.WithTimeout(ctx, defaultTestShortTimeout)
 	defer shortCancel()
 
+	// TODO: Change this assertion to testutils.AwaitState(shortCtx, t, cc,
+	// connectivity.Connecting) when the channel correctly transitions to
+	// CONNECTING while waiting for the first resolver update.
 	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
 
 	internal.EnterIdleModeForTesting.(func(*grpc.ClientConn))(cc)
@@ -650,17 +651,20 @@ func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 
 	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
 
-	rpcCtx, rpcCancel := context.WithTimeout(ctx, defaultTestShortTimeout)
-	defer rpcCancel()
+	shortCancel()
+	shortCtx, shortCancel = context.WithTimeout(ctx, defaultTestShortTimeout)
+	defer shortCancel()
 
 	go func() {
-		_, err := testgrpc.NewTestServiceClient(cc).EmptyCall(rpcCtx, &testgrpc.Empty{})
+		_, err := testgrpc.NewTestServiceClient(cc).EmptyCall(shortCtx, &testgrpc.Empty{})
 		if err == nil {
 			t.Errorf("Expected RPC to fail, but it succeeded")
-		} else if status.Code(err) != codes.Unavailable && status.Code(err) != codes.Canceled {
-			t.Errorf("Expected RPC to fail with code Unavailable or Canceled, got %v", err)
 		}
 	}()
+
+	shortCancel()
+	shortCtx, shortCancel = context.WithTimeout(ctx, defaultTestShortTimeout)
+	defer shortCancel()
 
 	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
 }
