@@ -30,15 +30,19 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/balancer"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/balancer/stub"
 	"google.golang.org/grpc/internal/envconfig"
 	"google.golang.org/grpc/internal/grpcsync"
+	"google.golang.org/grpc/internal/stubserver"
 	"google.golang.org/grpc/internal/testutils"
+	testgrpc "google.golang.org/grpc/interop/grpc_testing"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
+	"google.golang.org/grpc/status"
 )
 
 const stateRecordingBalancerName = "state_recording_balancer"
@@ -615,4 +619,48 @@ func (s) TestConnectivityStateSubscriber(t *testing.T) {
 			t.Fatalf("Timed out waiting for state update %v: %s", i, want)
 		}
 	}
+}
+
+// TestInitialChannelStateWaitingForFirstResolverUpdate verifies the initial state of the channel
+// when a manual name resolver doesn't provide any updates.
+func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
+	backend := stubserver.StartTestService(t, nil)
+	defer backend.Stop()
+
+	mr := manual.NewBuilderWithScheme("e2e-test")
+	defer mr.Close()
+
+	cc, err := grpc.NewClient(mr.Scheme()+":///", grpc.WithResolvers(mr), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to create new client: %v", err)
+	}
+	defer cc.Close()
+
+	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+	defer cancel()
+
+	shortCtx, shortCancel := context.WithTimeout(ctx, defaultTestShortTimeout)
+	defer shortCancel()
+
+	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
+
+	internal.EnterIdleModeForTesting.(func(*grpc.ClientConn))(cc)
+
+	cc.Connect()
+
+	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
+
+	rpcCtx, rpcCancel := context.WithTimeout(ctx, defaultTestShortTimeout)
+	defer rpcCancel()
+
+	go func() {
+		_, err := testgrpc.NewTestServiceClient(cc).EmptyCall(rpcCtx, &testgrpc.Empty{})
+		if err == nil {
+			t.Errorf("Expected RPC to fail, but it succeeded")
+		} else if status.Code(err) != codes.Unavailable && status.Code(err) != codes.Canceled {
+			t.Errorf("Expected RPC to fail with code Unavailable or Canceled, got %v", err)
+		}
+	}()
+
+	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
 }

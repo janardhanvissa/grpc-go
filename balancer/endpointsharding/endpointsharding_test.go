@@ -28,13 +28,11 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/balancer"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/grpctest"
 	"google.golang.org/grpc/internal/stubserver"
-	"google.golang.org/grpc/internal/testutils"
 	"google.golang.org/grpc/internal/testutils/roundrobin"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
@@ -158,92 +156,4 @@ func (s) TestEndpointShardingBasic(t *testing.T) {
 	if err = roundrobin.CheckRoundRobinRPCs(ctx, client, []resolver.Address{{Addr: backend1.Address}, {Addr: backend2.Address}}); err != nil {
 		t.Fatalf("error in expected round robin: %v", err)
 	}
-}
-
-// TestInitialChannelStateWaitingForFirstResolverUpdate verifies the initial state of the channel
-// when a manual name resolver doesn't provide any updates.
-func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
-	backend := stubserver.StartTestService(t, nil)
-	defer backend.Stop()
-
-	mr := manual.NewBuilderWithScheme("e2e-test")
-	defer mr.Close()
-
-	mr.InitialState(resolver.State{
-		Endpoints: []resolver.Endpoint{},
-	})
-
-	cc, err := grpc.NewClient(mr.Scheme()+":///", grpc.WithResolvers(mr), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatalf("Failed to create new client: %v", err)
-	}
-	defer cc.Close()
-
-	if state := cc.GetState(); state != connectivity.Idle {
-		t.Fatalf("Expected initial state Idle, got %v", state)
-	}
-
-	cc.Connect()
-	state := cc.GetState()
-	if state != connectivity.Connecting && state != connectivity.TransientFailure {
-		t.Fatalf("Expected state Connecting or TransientFailure after Connect(), got %v", state)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Allow the state to transition either to Connecting or TransientFailure.
-	if state == connectivity.Connecting {
-		testutils.AwaitState(ctx, t, cc, connectivity.TransientFailure)
-	}
-
-	errChan := make(chan error, 1)
-	go func() {
-		_, err := testgrpc.NewTestServiceClient(cc).EmptyCall(context.Background(), &testgrpc.Empty{})
-		if err == nil {
-			errChan <- fmt.Errorf("expected RPC to fail, but it succeeded")
-		} else {
-			errChan <- nil
-		}
-	}()
-
-	if err := <-errChan; err != nil {
-		t.Fatal(err)
-	}
-
-	if state := cc.GetState(); state != connectivity.TransientFailure {
-		t.Fatalf("Expected state TransientFailure, got %v", state)
-	}
-
-	if enterFunc, ok := internal.EnterIdleModeForTesting.(func(*grpc.ClientConn)); ok {
-		enterFunc(cc)
-	} else {
-		t.Fatalf("internal.EnterIdleModeForTesting is not callable")
-	}
-
-	state = cc.GetState()
-	if state != connectivity.Idle && state != connectivity.TransientFailure {
-		t.Fatalf("Expected state Idle or TransientFailure after entering idle mode, got %v", state)
-	}
-
-	cc.Connect()
-	state = cc.GetState()
-	if state != connectivity.Connecting && state != connectivity.TransientFailure {
-		t.Fatalf("Expected state Connecting or TransientFailure after Connect(), got %v", state)
-	}
-
-	// If the state is Connecting, wait for it to transition to TransientFailure again.
-	if state == connectivity.Connecting {
-		testutils.AwaitState(ctx, t, cc, connectivity.TransientFailure)
-	}
-
-	mr.UpdateState(resolver.State{
-		Endpoints: []resolver.Endpoint{
-			{Addresses: []resolver.Address{{Addr: backend.Address}}},
-		},
-	})
-
-	time.Sleep(50 * time.Millisecond)
-
-	testutils.AwaitState(ctx, t, cc, connectivity.Ready)
 }
