@@ -661,6 +661,6 @@ func (s) TestInitialChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 			t.Errorf("Expected RPC to fail with code Unavailable or Canceled, got %v", err)
 		}
 	}()
-	//Await No state change when there is a context connecting to idle
+
 	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
 }
