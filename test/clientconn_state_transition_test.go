@@ -662,9 +662,8 @@ func (s) TestChannelStateWaitingForFirstResolverUpdate(t *testing.T) {
 		}
 	}()
 
-	shortCancel()
-	shortCtx, shortCancel = context.WithTimeout(ctx, defaultTestShortTimeout)
-	defer shortCancel()
-
+	// TODO: Change this assertion to testutils.AwaitState(shortCtx, t, cc,
+	// connectivity.Connecting) when the channel correctly transitions to
+	// CONNECTING while waiting for the resolver update.
 	testutils.AwaitNoStateChange(shortCtx, t, cc, connectivity.Idle)
 }
