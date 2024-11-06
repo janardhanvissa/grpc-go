@@ -1002,6 +1002,10 @@ func (s *Server) newHTTP2Transport(c net.Conn) transport.ServerTransport {
 }
 
 func (s *Server) serveStreams(ctx context.Context, st transport.ServerTransport, rawConn net.Conn) {
+	// Create a context that will be canceled when the transport closes.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	ctx = transport.SetConnection(ctx, rawConn)
 	ctx = peer.NewContext(ctx, st.Peer())
 	for _, sh := range s.opts.statsHandlers {
@@ -1021,23 +1025,41 @@ func (s *Server) serveStreams(ctx context.Context, st transport.ServerTransport,
 
 	streamQuota := newHandlerQuota(s.opts.maxConcurrentStreams)
 	st.HandleStreams(ctx, func(stream *transport.Stream) {
-		s.handlersWG.Add(1)
-		streamQuota.acquire()
+		// Define the function to handle the stream.
 		f := func() {
-			defer streamQuota.release()
 			defer s.handlersWG.Done()
+			defer streamQuota.release()
 			s.handleStream(st, stream)
 		}
+
+		// Only add to the wait group if we are sure `f` will run.
+		s.handlersWG.Add(1)
+
+		// Acquire a slot in streamQuota, with proper handling to avoid leaks.
+		streamQuota.acquire()
 
 		if s.opts.numServerWorkers > 0 {
 			select {
 			case s.serverWorkerChannel <- f:
+				return // `f` will be handled by a worker, exit here.
+			case <-ctx.Done():
+				s.handlersWG.Done()
 				return
 			default:
 				// If all stream workers are busy, fallback to the default code path.
 			}
 		}
-		go f()
+
+		// Use a goroutine to execute `f` if we couldn't send it to a worker.
+		go func() {
+			select {
+			case <-ctx.Done():
+				s.handlersWG.Done() // Undo the wait group increment
+				return
+			default:
+				f() // Execute the stream handler function.
+			}
+		}()
 	})
 }
 
