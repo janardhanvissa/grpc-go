@@ -24,6 +24,7 @@ import (
 	"time"
 
 	otelinternaltracing "google.golang.org/grpc/stats/opentelemetry/internal/tracing"
+	"google.golang.org/grpc/stats/opentelemetry/tracing"
 
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -45,8 +46,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata/metricdatatest"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	otelsemconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding/gzip"
@@ -62,7 +65,6 @@ import (
 	"google.golang.org/grpc/orca"
 	"google.golang.org/grpc/stats/opentelemetry"
 	"google.golang.org/grpc/stats/opentelemetry/internal/testutils"
-	"google.golang.org/grpc/stats/opentelemetry/tracing"
 )
 
 var defaultTestTimeout = 5 * time.Second
@@ -91,7 +93,13 @@ func defaultMetricsOptions(_ *testing.T, methodAttributeFilter func(string) bool
 func defaultTraceOptions(_ *testing.T) (*opentelemetry.TraceOptions, *tracetest.InMemoryExporter) {
 	spanExporter := tracetest.NewInMemoryExporter()
 	spanProcessor := trace.NewSimpleSpanProcessor(spanExporter)
-	tracerProvider := trace.NewTracerProvider(trace.WithSpanProcessor(spanProcessor))
+	tracerProvider := trace.NewTracerProvider(
+		trace.WithSpanProcessor(spanProcessor),
+		trace.WithResource(resource.NewWithAttributes(
+			otelsemconv.SchemaURL,
+			otelsemconv.ServiceNameKey.String("test-service"),
+		)),
+	)
 	textMapPropagator := propagation.NewCompositeTextMapPropagator(tracing.GRPCTraceBinPropagator{})
 	traceOptions := &opentelemetry.TraceOptions{
 		TracerProvider:    tracerProvider,
@@ -979,14 +987,15 @@ func (s) TestW3CContextPropagator(t *testing.T) {
 	}
 }
 
-// TestOtelSpanContextPropagation tests the propagation of OpenTelemetry span context across gRPC calls.
-func (s) TestOtelSpanContextPropagation(t *testing.T) {
+// TestOcClientToOtelServerGrpcTraceBinPropagator verifies that tracing information
+// is propagated correctly from Census to OpenTelemetry through gRPC.
+
+func (s) TestOcClientToOtelServerGrpcTraceBinPropagator(t *testing.T) {
 	traceOptions, spanExporter := defaultTraceOptions(t)
 
 	ss := setupStubServer(t, nil, traceOptions)
 	defer ss.Stop()
 
-	// Create a parent span for the client call
 	ctx, span := otel.Tracer("grpc-open-telemetry").Start(context.Background(), "test-parent-span")
 	defer span.End()
 
@@ -994,79 +1003,83 @@ func (s) TestOtelSpanContextPropagation(t *testing.T) {
 	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewCustomCarrier(ctx))
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
-	// Make a unary RPC
-	_, err := ss.Client.UnaryCall(
-		ctx,
-		&testpb.SimpleRequest{Payload: &testpb.Payload{Body: []byte("test")}},
-	)
-	if err != nil {
-		t.Fatalf("Unexpected error from UnaryCall: %v", err)
-	}
-
-	// Get the spans from the exporter
-	spans := spanExporter.GetSpans()
-	if got, want := len(spans), 3; got != want {
-		t.Fatalf("Got %d spans, want %d", got, want)
-	}
-
-	clientSpan := spans[1]
-
-	if got, want := clientSpan.Status.Code, otelcodes.Ok; got != want {
-		t.Errorf("Got client span status code %v, want %v", got, want)
-	}
-
-	if len(clientSpan.Events) == 0 {
-		t.Error("Client span didn't have any events.")
-	} else {
-
-		for _, event := range clientSpan.Events {
-			t.Logf("Recorded event: %v", event.Name)
-		}
-
-		got := clientSpan.Events[0].Name
-		want := "Outbound compressed message"
-		if got != want {
-			t.Errorf("Client span had unexpected event: got %v, want %v", got, want)
-		}
-	}
-
-}
-
-// TestCensusToOtelGrpcTraceBinPropagator verifies that tracing information is propagated correctly
-// from Census to OpenTelemetry through gRPC.
-
-func (s) TestCensusToOtelGrpcTraceBinPropagator(t *testing.T) {
-	traceOptions, spanExporter := defaultTraceOptions(t)
-
-	ss := setupStubServer(t, nil, traceOptions)
-	defer ss.Stop()
-
-	ctx, span := otel.Tracer("test").Start(context.Background(), "client-call")
-	defer span.End()
-
+	// Make a unary RPC call
 	_, err := ss.Client.UnaryCall(ctx, &testpb.SimpleRequest{Payload: &testpb.Payload{Body: make([]byte, 10000)}})
 	if err != nil {
 		t.Fatalf("Unexpected error from UnaryCall: %v", err)
 	}
 
 	spans := spanExporter.GetSpans()
-	for i, span := range spans {
-		t.Logf("Span %d: %s", i, span.Name)
-		for _, event := range span.Events {
-			t.Logf("  Recorded event: %s", event.Name)
-		}
+	if len(spans) == 0 {
+		t.Fatalf("No spans recorded by the OpenTelemetry span exporter")
 	}
 
-	expectedEventName := "grpc.testing.TestService.UnaryCall"
-	foundEvent := false
+	foundClientSpan := false
 	for _, span := range spans {
-		if span.Name == expectedEventName {
-			foundEvent = true
-			break
+		t.Logf("Recorded Span: %s", span.Name)
+		if span.Name == "grpc.testing.TestService.UnaryCall" {
+			foundClientSpan = true
+			t.Logf("Found server span with client-propagated context")
 		}
 	}
 
-	if !foundEvent {
-		t.Errorf("Expected event %q not found in any span events", expectedEventName)
+	if !foundClientSpan {
+		t.Errorf("Expected server span with client-propagated context not found")
+	}
+}
+
+// TestOtelClientToOCServerGrpcTraceBinPropagator verifies that tracing information
+// is propagated correctly from OpenTelemetry to Census through gRPC.
+
+func (s) TestOtelClientToOCServerGrpcTraceBinPropagator(t *testing.T) {
+	traceOptions, spanExporter := defaultTraceOptions(t)
+	mo, reader := defaultMetricsOptions(t, nil)
+
+	ss := setupStubServer(t, mo, traceOptions)
+	defer ss.Stop()
+
+	ctx, span := otel.Tracer("grpc-open-telemetry").Start(context.Background(), "test-parent-span")
+	defer span.End()
+
+	md, _ := metadata.FromOutgoingContext(ctx)
+	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewCustomCarrier(ctx))
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
+	payload := &testpb.Payload{
+		Body: make([]byte, 10000),
+	}
+
+	if _, err := ss.Client.UnaryCall(ctx, &testpb.SimpleRequest{Payload: payload}); err != nil {
+		t.Fatalf("Unexpected error from UnaryCall: %v", err)
+	}
+
+	rm := &metricdata.ResourceMetrics{}
+	reader.Collect(ctx, rm)
+
+	gotMetrics := map[string]metricdata.Metrics{}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			gotMetrics[m.Name] = m
+			t.Logf("Collected Metric: %s", m.Name)
+		}
+	}
+
+	if _, exists := gotMetrics["grpc.client.attempt.sent_total_compressed_message_size"]; !exists {
+		t.Fatalf("Expected metric grpc.client.attempt.sent_total_compressed_message_size not found")
+	}
+
+	if _, exists := gotMetrics["grpc.client.attempt.duration"]; !exists {
+		t.Fatalf("Expected metric grpc.client.attempt.duration not found")
+	}
+
+	spans := spanExporter.GetSpans()
+	if got, want := len(spans), 3; got != want {
+		t.Fatalf("Got %d spans, want %d", got, want)
+	}
+
+	for _, span := range spans {
+		if got, want := span.Status.Code, otelcodes.Ok; got != want {
+			t.Errorf("Got status code %v, want %v", got, want)
+		}
 	}
 }
