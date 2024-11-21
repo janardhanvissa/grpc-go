@@ -25,10 +25,12 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/stats/opentelemetry"
-	"google.golang.org/grpc/stats/opentelemetry/tracing"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/exporters/prometheus"
@@ -79,7 +81,10 @@ func main() {
 	}()
 
 	// Create a text map propagator for gRPC
-	textMapPropagator := propagation.NewCompositeTextMapPropagator(tracing.GRPCTraceBinPropagator{})
+	textMapPropagator := propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+		opentelemetry.GRPCTraceBinPropagator{})
 
 	// Create server options for OpenTelemetry
 	serverOptions := opentelemetry.ServerOption(opentelemetry.Options{
@@ -103,6 +108,18 @@ func main() {
 
 	// Register the Echo service with the server
 	pb.RegisterEchoServer(s, &echoServer{addr: *addr})
+
+	log.Printf("Serving on %s\n", *addr)
+
+	// Handle OS signals for graceful shutdown
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-signalChan
+		log.Println("Shutting down server...")
+		s.GracefulStop()
+	}()
 
 	log.Printf("Serving on %s\n", *addr)
 

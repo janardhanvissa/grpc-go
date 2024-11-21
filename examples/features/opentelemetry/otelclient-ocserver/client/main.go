@@ -23,61 +23,71 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
-	"go.opencensus.io/plugin/ocgrpc"
-	"go.opencensus.io/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	pb "google.golang.org/grpc/examples/features/proto/echo"
+	"google.golang.org/grpc/examples/features/proto/echo"
+	"google.golang.org/grpc/stats/opentelemetry"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-var addr = flag.String("addr", ":50051", "the server address to connect to")
-
-func initOpenCensus() {
-	// Initialize OpenCensus tracing with AlwaysSample sampler
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
-	log.Println("OpenCensus tracing initialized with B3 propagation")
-}
-
-func makeGRPCCallWithOpenCensus(client pb.EchoClient) {
-	ctx, span := trace.StartSpan(context.Background(), "OpenCensus.ClientCall")
-	defer span.End()
-
-	span.AddAttributes(trace.StringAttribute("rpc.method", "UnaryEcho"))
-
-	// Making the gRPC call
-	resp, err := client.UnaryEcho(ctx, &pb.EchoRequest{Message: "Hello from OpenCensus"})
-	if err != nil {
-		log.Printf("OpenCensus call failed: %v", err)
-		return
-	}
-
-	span.AddAttributes(trace.StringAttribute("response.message", resp.Message))
-	fmt.Printf("OpenCensus Response: %s\n", resp.Message)
-}
+var (
+	addr               = flag.String("addr", ":50051", "the server address to connect to")
+	prometheusEndpoint = flag.String("prometheus_endpoint", ":9465", "the Prometheus exporter endpoint")
+)
 
 func main() {
-	flag.Parse()
-
-	// Initialize OpenCensus tracing
-	initOpenCensus()
-
-	// Create a gRPC client connection with OpenCensus stats handler
-	conn, err := grpc.Dial(*addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithStatsHandler(&ocgrpc.ClientHandler{}),
-	)
+	exporter, err := prometheus.New()
 	if err != nil {
-		log.Fatalf("Failed to connect to server: %v", err)
+		log.Fatalf("Failed to start prometheus exporter: %v", err)
 	}
-	defer conn.Close()
+	provider := metric.NewMeterProvider(metric.WithReader(exporter))
 
-	client := pb.NewEchoClient(conn)
+	spanExporter := tracetest.NewInMemoryExporter()
+	spanProcessor := trace.NewSimpleSpanProcessor(spanExporter)
+	tracerProvider := trace.NewTracerProvider(trace.WithSpanProcessor(spanProcessor))
+	textMapPropagator := propagation.NewCompositeTextMapPropagator(opentelemetry.GRPCTraceBinPropagator{})
+	traceOptions := opentelemetry.TraceOptions{
+		TracerProvider:    tracerProvider,
+		TextMapPropagator: textMapPropagator,
+	}
 
-	// Make gRPC calls with OpenCensus
+	go http.ListenAndServe(*prometheusEndpoint, promhttp.Handler())
+
+	ctx := context.Background()
+	do := opentelemetry.DialOption(opentelemetry.Options{
+		MetricsOptions: opentelemetry.MetricsOptions{MeterProvider: provider},
+		TraceOptions:   traceOptions})
+
+	cc, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()), do)
+	if err != nil {
+		log.Fatalf("Failed to start NewClient: %v", err)
+	}
+	defer cc.Close()
+	c := echo.NewEchoClient(cc)
+
+	// Make an RPC every second. This should trigger telemetry on prometheus
+	// server along with traces in the in memory exporter to be emitted from
+	// the client and the server.
 	for {
-		makeGRPCCallWithOpenCensus(client)
-		time.Sleep(2 * time.Second)
+		r, err := c.UnaryEcho(ctx, &echo.EchoRequest{Message: "this is examples/opentelemetry"})
+		if err != nil {
+			log.Fatalf("UnaryEcho failed: %v", err)
+		}
+		fmt.Println(r)
+
+		for _, span := range spanExporter.GetSpans() {
+			fmt.Printf("span: %v, %v\n", span.Name, span.SpanKind)
+		}
+
+		time.Sleep(time.Second)
 	}
 }

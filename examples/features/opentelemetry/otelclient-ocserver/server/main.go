@@ -24,61 +24,99 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	"time"
 
-	otelgrpc "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opencensus.io/stats"
+	"go.opencensus.io/stats/view"
+	"go.opencensus.io/trace"
 	"google.golang.org/grpc"
 	pb "google.golang.org/grpc/examples/features/proto/echo"
 )
 
-var addr = flag.String("addr", ":50051", "the server address to listen on")
+var (
+	addr               = flag.String("addr", ":50051", "the server address to connect to")
+	prometheusEndpoint = flag.String("prometheus_endpoint", ":9466", "the Prometheus exporter endpoint")
+)
 
-type echoServer struct {
+var (
+	mRequests = stats.Int64("echo/requests", "The number of requests received", stats.UnitDimensionless)
+)
+
+// EchoService is the implementation of the Echo service.
+type EchoService struct {
 	pb.UnimplementedEchoServer
 }
 
-func (s *echoServer) UnaryEcho(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse, error) {
-	span := trace.SpanFromContext(ctx)
-	span.AddEvent("Received UnaryEcho request")
-	log.Printf("Received message: %s", req.Message)
+func (s *EchoService) UnaryEcho(ctx context.Context, req *pb.EchoRequest) (*pb.EchoResponse, error) {
+	// Start OpenCensus tracing for each request
+	ctx, span := trace.StartSpan(ctx, "EchoService.UnaryEcho")
+	defer span.End()
 
-	resp := &pb.EchoResponse{Message: fmt.Sprintf("%s (response from server)", req.Message)}
-	return resp, nil
+	stats.Record(ctx, mRequests.M(1))
+
+	time.Sleep(100 * time.Millisecond)
+
+	return &pb.EchoResponse{Message: fmt.Sprintf("Hello, %s!", req.Message)}, nil
 }
 
-func initOpenTelemetry() *sdktrace.TracerProvider {
-	tracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
-	)
-	otel.SetTracerProvider(tracerProvider)
-	return tracerProvider
+func init() {
+	// Register OpenCensus views to track metrics
+	if err := view.Register(
+		&view.View{
+			Name:        "echo/requests_count",
+			Description: "The count of Echo requests received",
+			Measure:     mRequests,
+			Aggregation: view.Count(),
+		},
+	); err != nil {
+		log.Fatalf("Failed to register view: %v", err)
+	} else {
+		log.Println("Metrics view registered successfully")
+	}
 }
 
 func main() {
-	flag.Parse()
+	// Start Prometheus HTTP server for exposing metrics
+	go func() {
+		log.Printf("Prometheus server running on %s", *prometheusEndpoint)
+		if err := http.ListenAndServe(*prometheusEndpoint, promhttp.Handler()); err != nil {
+			log.Fatalf("Failed to start Prometheus server: %v", err)
+		}
+	}()
 
-	// Initialize OpenTelemetry tracing
-	tracerProvider := initOpenTelemetry()
-	defer tracerProvider.Shutdown(context.Background())
+	// Create gRPC server
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(grpcServerInterceptor))
+	pb.RegisterEchoServer(grpcServer, &EchoService{})
 
-	// Create a gRPC server with OpenTelemetry interceptor
-	server := grpc.NewServer(
-		grpc.UnaryInterceptor(otelgrpc.UnaryServerInterceptor()),
-	)
-
-	// Register the Echo service with the server
-	pb.RegisterEchoServer(server, &echoServer{})
-
-	// Start listening for incoming connections
-	lis, err := net.Listen("tcp", *addr)
+	listener, err := net.Listen("tcp", *addr)
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		log.Fatalf("Failed to listen on %v: %v", addr, err)
 	}
 
-	log.Printf("OpenTelemetry gRPC server listening on %s", *addr)
-	if err := server.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
+	// Start the gRPC server
+	log.Printf("Server listening on gRPC port: %s", *addr)
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Fatalf("Failed to serve gRPC server: %v", err)
 	}
+}
+
+func grpcServerInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	// Start a trace span for the incoming gRPC call
+	ctx, span := trace.StartSpan(ctx, info.FullMethod)
+	defer span.End()
+
+	resp, err := handler(ctx, req)
+
+	span.AddAttributes(
+		trace.StringAttribute("method", info.FullMethod),
+	)
+	if err != nil {
+		span.SetStatus(trace.Status{
+			Code:    trace.StatusCodeInternal,
+			Message: err.Error(),
+		})
+	}
+	return resp, err
 }

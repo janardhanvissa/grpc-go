@@ -78,6 +78,7 @@ func main() {
 		log.Fatalf("failed to create prometheus exporter: %v", err)
 	}
 	meterProvider := metric.NewMeterProvider(metric.WithReader(promExporter))
+	defer meterProvider.Shutdown(context.Background())
 	otel.SetMeterProvider(meterProvider)
 
 	// Setup stdout trace exporter

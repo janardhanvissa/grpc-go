@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package opentelemetry_test
+package opentelemetry
 
 import (
 	"context"
@@ -24,7 +24,6 @@ import (
 	"time"
 
 	otelinternaltracing "google.golang.org/grpc/stats/opentelemetry/internal/tracing"
-	"google.golang.org/grpc/stats/opentelemetry/tracing"
 
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -54,7 +53,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/internal/grpcsync"
-	"google.golang.org/grpc/internal/grpctest"
 	"google.golang.org/grpc/internal/stubserver"
 	itestutils "google.golang.org/grpc/internal/testutils"
 	"google.golang.org/grpc/internal/testutils/xds/e2e"
@@ -63,45 +61,32 @@ import (
 	testpb "google.golang.org/grpc/interop/grpc_testing"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/orca"
-	"google.golang.org/grpc/stats/opentelemetry"
 	"google.golang.org/grpc/stats/opentelemetry/internal/testutils"
 )
 
-var defaultTestTimeout = 5 * time.Second
-
-type s struct {
-	grpctest.Tester
-}
-
-func Test(t *testing.T) {
-	grpctest.RunSubTests(t, s{})
-}
-
 // defaultMetricsOptions creates default metrics options
-func defaultMetricsOptions(_ *testing.T, methodAttributeFilter func(string) bool) (*opentelemetry.MetricsOptions, *metric.ManualReader) {
+func defaultMetricsOptions(_ *testing.T, methodAttributeFilter func(string) bool) (*MetricsOptions, *metric.ManualReader) {
 	reader := metric.NewManualReader()
 	provider := metric.NewMeterProvider(metric.WithReader(reader))
-	metricsOptions := &opentelemetry.MetricsOptions{
+	metricsOptions := &MetricsOptions{
 		MeterProvider:         provider,
-		Metrics:               opentelemetry.DefaultMetrics(),
+		Metrics:               DefaultMetrics(),
 		MethodAttributeFilter: methodAttributeFilter,
 	}
 	return metricsOptions, reader
 }
 
 // defaultTraceOptions function to create default trace options
-func defaultTraceOptions(_ *testing.T) (*opentelemetry.TraceOptions, *tracetest.InMemoryExporter) {
+func defaultTraceOptions(_ *testing.T) (*TraceOptions, *tracetest.InMemoryExporter) {
 	spanExporter := tracetest.NewInMemoryExporter()
 	spanProcessor := trace.NewSimpleSpanProcessor(spanExporter)
-	tracerProvider := trace.NewTracerProvider(
-		trace.WithSpanProcessor(spanProcessor),
+	tracerProvider := trace.NewTracerProvider(trace.WithSpanProcessor(spanProcessor),
 		trace.WithResource(resource.NewWithAttributes(
 			otelsemconv.SchemaURL,
 			otelsemconv.ServiceNameKey.String("test-service"),
-		)),
-	)
-	textMapPropagator := propagation.NewCompositeTextMapPropagator(tracing.GRPCTraceBinPropagator{})
-	traceOptions := &opentelemetry.TraceOptions{
+		)))
+	textMapPropagator := propagation.NewCompositeTextMapPropagator(GRPCTraceBinPropagator{})
+	traceOptions := &TraceOptions{
 		TracerProvider:    tracerProvider,
 		TextMapPropagator: textMapPropagator,
 	}
@@ -110,7 +95,7 @@ func defaultTraceOptions(_ *testing.T) (*opentelemetry.TraceOptions, *tracetest.
 
 // setupStubServer creates a stub server with OpenTelemetry component configured on client
 // and server side and returns the server.
-func setupStubServer(t *testing.T, metricsOptions *opentelemetry.MetricsOptions, traceOptions *opentelemetry.TraceOptions) *stubserver.StubServer {
+func setupStubServer(t *testing.T, metricsOptions *MetricsOptions, traceOptions *TraceOptions) *stubserver.StubServer {
 	ss := &stubserver.StubServer{
 		UnaryCallF: func(ctx context.Context, in *testpb.SimpleRequest) (*testpb.SimpleResponse, error) {
 			return &testpb.SimpleResponse{Payload: &testpb.Payload{
@@ -127,7 +112,7 @@ func setupStubServer(t *testing.T, metricsOptions *opentelemetry.MetricsOptions,
 		},
 	}
 
-	otelOptions := opentelemetry.Options{}
+	otelOptions := Options{}
 	if metricsOptions != nil {
 		otelOptions.MetricsOptions = *metricsOptions
 	}
@@ -135,8 +120,8 @@ func setupStubServer(t *testing.T, metricsOptions *opentelemetry.MetricsOptions,
 		otelOptions.TraceOptions = *traceOptions
 	}
 
-	if err := ss.Start([]grpc.ServerOption{opentelemetry.ServerOption(otelOptions)},
-		opentelemetry.DialOption(otelOptions)); err != nil {
+	if err := ss.Start([]grpc.ServerOption{ServerOption(otelOptions)},
+		DialOption(otelOptions)); err != nil {
 		t.Fatalf("Error starting endpoint server: %v", err)
 	}
 	return ss
@@ -492,14 +477,14 @@ func (s) TestWRRMetrics(t *testing.T) {
 	reader := metric.NewManualReader()
 	provider := metric.NewMeterProvider(metric.WithReader(reader))
 
-	mo := opentelemetry.MetricsOptions{
+	mo := MetricsOptions{
 		MeterProvider:  provider,
-		Metrics:        opentelemetry.DefaultMetrics().Add("grpc.lb.wrr.rr_fallback", "grpc.lb.wrr.endpoint_weight_not_yet_usable", "grpc.lb.wrr.endpoint_weight_stale", "grpc.lb.wrr.endpoint_weights"),
+		Metrics:        DefaultMetrics().Add("grpc.lb.wrr.rr_fallback", "grpc.lb.wrr.endpoint_weight_not_yet_usable", "grpc.lb.wrr.endpoint_weight_stale", "grpc.lb.wrr.endpoint_weights"),
 		OptionalLabels: []string{"grpc.lb.locality"},
 	}
 
 	target := fmt.Sprintf("xds:///%s", serviceName)
-	cc, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithResolvers(xdsResolver), opentelemetry.DialOption(opentelemetry.Options{MetricsOptions: mo}))
+	cc, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithResolvers(xdsResolver), DialOption(Options{MetricsOptions: mo}))
 	if err != nil {
 		t.Fatalf("Failed to dial local test server: %v", err)
 	}
@@ -628,9 +613,6 @@ func pollForWantMetrics(ctx context.Context, t *testing.T, reader *metric.Manual
 // goes through a stable OpenTelemetry API with well-defined behavior. This keeps
 // the robustness of assertions over time.
 type spanInformation struct {
-	// SpanContext either gets pulled off the wire in certain cases server side
-	// or created.
-	sc         trace2.SpanContext
 	spanKind   string
 	name       string
 	events     []trace.Event
@@ -638,11 +620,11 @@ type spanInformation struct {
 }
 
 // TestClientCallSpanEvents verifies the events added to call spans
-// for a unary RPC, including events for gRPC status and name resolution
-// delays. It also verifies the same traceID is propagated across client
-// to server. It sets up a stub server with OpenTelemetry tracing enabled,
-// makes a unary RPC with gzip compression, and then asserts that the exported
-// spans contain the expected events and attributes.
+// for a unary RPC, including events for gRPC status. It also verifies
+// the same traceID is propagated across client to server. It sets up a
+// stub server with OpenTelemetry tracing enabled, makes a unary RPC with
+// gzip compression, and then asserts that the exported spans contain the
+// expected events and attributes.
 func (s) TestClientCallSpanEvents(t *testing.T) {
 	// Using defaultTraceOptions to set up OpenTelemetry with an in-memory exporter
 	traceOptions, spanExporter := defaultTraceOptions(t)
@@ -651,13 +633,15 @@ func (s) TestClientCallSpanEvents(t *testing.T) {
 	ss := setupStubServer(t, nil, traceOptions)
 	defer ss.Stop()
 
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
 	// Create a parent span for the client call
-	ctx, _ := otel.Tracer("grpc-open-telemetry").Start(context.Background(), "test-parent-span")
+	ctx, _ = otel.Tracer("grpc-open-telemetry").Start(ctx, "test-parent-span")
 	md, _ := metadata.FromOutgoingContext(ctx)
-	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewCustomCarrier(ctx))
+	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewIncomingCarrier(ctx))
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
-	grpc.NameResolutionDelayDuration = 0
 	// Make a unary RPC
 	if _, err := ss.Client.UnaryCall(
 		ctx,
@@ -677,10 +661,6 @@ func (s) TestClientCallSpanEvents(t *testing.T) {
 	// Check that the client span has the correct status.
 	if got, want := clientSpan.Status.Code, otelcodes.Ok; got != want {
 		t.Errorf("Got client span status code %v, want %v", got, want)
-	}
-	// Check that the client has event for name resolution delay.
-	if got, want := clientSpan.Events[0].Name, "Delayed name resolution complete"; got != want {
-		t.Fatal("Client span didn't had event for delayed name resolution.")
 	}
 	// Check that same traceID is used in client and server.
 	if got, want := spans[0].SpanContext.TraceID(), spans[2].SpanContext.TraceID(); got != want {
@@ -709,10 +689,14 @@ func (s) TestServerWithMetricsAndTraceOptions(t *testing.T) {
 
 	ss := setupStubServer(t, mo, to)
 	defer ss.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
 	// Create a parent span for the client call
-	ctx, _ := otel.Tracer("grpc-open-telemetry").Start(context.Background(), "test-parent-span")
+	ctx, _ = otel.Tracer("grpc-open-telemetry").Start(ctx, "test-parent-span")
 	md, _ := metadata.FromOutgoingContext(ctx)
-	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewCustomCarrier(ctx))
+	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewIncomingCarrier(ctx))
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
 	// Make two RPC's, a unary RPC and a streaming RPC. These should cause
@@ -774,14 +758,14 @@ func (s) TestGrpcTraceBinPropagator(t *testing.T) {
 	// Start the server with OpenTelemetry options
 	ss := setupStubServer(t, nil, traceOptions)
 	defer ss.Stop()
-	// Override NameResolutionDelayDuration to 0 so that client span
-	// contains event for name resolution delay.
-	grpc.NameResolutionDelayDuration = 0
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
 
 	// Create a parent span for the client call
-	ctx, _ := otel.Tracer("grpc-open-telemetry").Start(context.Background(), "test-parent-span")
+	ctx, _ = otel.Tracer("grpc-open-telemetry").Start(ctx, "test-parent-span")
 	md, _ := metadata.FromOutgoingContext(ctx)
-	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewCustomCarrier(ctx))
+	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewIncomingCarrier(ctx))
 	ctx = metadata.NewOutgoingContext(ctx, md)
 	// Make a unary RPC
 	if _, err := ss.Client.UnaryCall(
@@ -898,11 +882,7 @@ func (s) TestGrpcTraceBinPropagator(t *testing.T) {
 			name:       "grpc.testing.TestService.UnaryCall",
 			spanKind:   trace2.SpanKindClient.String(),
 			attributes: []attribute.KeyValue{},
-			events: []trace.Event{
-				{
-					Name: "Delayed name resolution complete",
-				},
-			},
+			events:     []trace.Event{},
 		},
 	}
 
@@ -945,10 +925,8 @@ func (s) TestGrpcTraceBinPropagator(t *testing.T) {
 	}
 }
 
-// TestW3CContextPropagator verifies that the W3C Trace Context propagator
-// correctly propagates span context between a client and server using the
-// headers. It sets up a stub server with  OpenTelemetry tracing enabled
-// makes a unary and a streaming RPC, and then, asserts that the correct
+// TestW3CContextPropagator sets up a stub server with  OpenTelemetry tracing
+// enabled makes a unary and a streaming RPC, and then, asserts that the correct
 // number of spans are created with the expected spans.
 func (s) TestW3CContextPropagator(t *testing.T) {
 	// Using defaultTraceOptions to set up OpenTelemetry with an in-memory exporter
@@ -959,7 +937,12 @@ func (s) TestW3CContextPropagator(t *testing.T) {
 	// Start the server with OpenTelemetry options
 	ss := setupStubServer(t, nil, traceOptions)
 	defer ss.Stop()
-	ctx, _ := otel.Tracer("grpc-open-telemetry").Start(context.Background(), "test-parent-span")
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTestTimeout)
+	defer cancel()
+
+	// Create a parent span for the client call
+	ctx, _ = otel.Tracer("grpc-open-telemetry").Start(ctx, "test-parent-span")
 	md, _ := metadata.FromOutgoingContext(ctx)
 	ctx = metadata.NewOutgoingContext(ctx, md)
 	// Make two RPC's, a unary RPC and a streaming RPC. These should cause
@@ -1000,7 +983,7 @@ func (s) TestOcClientToOtelServerGrpcTraceBinPropagator(t *testing.T) {
 	defer span.End()
 
 	md, _ := metadata.FromOutgoingContext(ctx)
-	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewCustomCarrier(ctx))
+	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewIncomingCarrier(ctx))
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
 	// Make a unary RPC call
@@ -1042,7 +1025,7 @@ func (s) TestOtelClientToOCServerGrpcTraceBinPropagator(t *testing.T) {
 	defer span.End()
 
 	md, _ := metadata.FromOutgoingContext(ctx)
-	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewCustomCarrier(ctx))
+	otel.GetTextMapPropagator().Inject(ctx, otelinternaltracing.NewIncomingCarrier(ctx))
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
 	payload := &testpb.Payload{
