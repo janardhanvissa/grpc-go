@@ -1,3 +1,8 @@
 go 1.23.1
 
-use /usr/local/google/home/vissajanardhan/GRPC-6/j1/grpc-go/examples
+use (
+    ./examples
+    /usr/local/google/home/vissajanardhan/opentelemetry/grpc-go
+)
+
+replace google.golang.org/grpc v1.42.0 => /usr/local/google/home/vissajanardhan/opentelemetry/grpc-go
