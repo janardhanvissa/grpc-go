@@ -1253,7 +1253,7 @@ func testClientStats(t *testing.T, tc *testConfig, cc *rpcConfig, checkFuncs map
 func (s) TestClientStatsUnaryRPC(t *testing.T) {
 	testClientStats(t, &testConfig{compress: ""}, &rpcConfig{success: true, failfast: false, callType: unaryRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		outPayload:    {checkOutPayload, 1},
 		inHeader:      {checkInHeader, 1},
@@ -1266,7 +1266,7 @@ func (s) TestClientStatsUnaryRPC(t *testing.T) {
 func (s) TestClientStatsUnaryRPCError(t *testing.T) {
 	testClientStats(t, &testConfig{compress: ""}, &rpcConfig{success: false, failfast: false, callType: unaryRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		outPayload:    {checkOutPayload, 1},
 		inHeader:      {checkInHeader, 1},
