@@ -1434,8 +1434,8 @@ func (s) TestMultipleClientStatsHandler(t *testing.T) {
 	}
 
 	// Each RPC generates 7 stats events on the client-side, times 2 StatsHandler
-	if len(h.gotRPC) != 16 {
-		t.Fatalf("h.gotRPC: unexpected amount of RPCStats: %v != %v", len(h.gotRPC), 16)
+	if len(h.gotRPC) != 14 {
+		t.Fatalf("h.gotRPC: unexpected amount of RPCStats: %v != %v", len(h.gotRPC), 14)
 	}
 
 	// Each connection generates 4 conn events on the client-side, times 2 StatsHandler
