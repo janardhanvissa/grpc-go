@@ -797,7 +797,7 @@ func checkPickerUpdated(t *testing.T, d *gotData, e *expectedData) {
 	if d.ctx == nil {
 		t.Fatalf("d.ctx = nil, want <non-nil>")
 	}
-	st.IsClient() // TODO remove this.
+	_ = st
 }
 
 type statshandler struct {
@@ -1264,20 +1264,15 @@ func (s) TestClientStatsUnaryRPC(t *testing.T) {
 }
 
 func (s) TestClientStatsUnaryRPCError(t *testing.T) {
-	localPickerUpdatedCounter := 0
 	testClientStats(t, &testConfig{compress: ""}, &rpcConfig{success: false, failfast: false, callType: unaryRPC}, map[int]*checkFuncWithCount{
-		begin: {checkBegin, 1},
-		pickerUpdated: {func(t *testing.T, d *gotData, e *expectedData) {
-			checkPickerUpdated(t, d, e)
-			localPickerUpdatedCounter++
-		}, 1},
-		outHeader:  {checkOutHeader, 1},
-		outPayload: {checkOutPayload, 1},
-		inHeader:   {checkInHeader, 1},
-		inTrailer:  {checkInTrailer, 1},
-		end:        {checkEnd, 1},
+		begin:         {checkBegin, 1},
+		pickerUpdated: {checkPickerUpdated, 1},
+		outHeader:     {checkOutHeader, 1},
+		outPayload:    {checkOutPayload, 1},
+		inHeader:      {checkInHeader, 1},
+		inTrailer:     {checkInTrailer, 1},
+		end:           {checkEnd, 1},
 	})
-	t.Logf("localPickerUpdatedCounter: %d", localPickerUpdatedCounter)
 }
 
 func (s) TestClientStatsClientStreamRPC(t *testing.T) {
