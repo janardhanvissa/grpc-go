@@ -1258,7 +1258,7 @@ func testClientStats(t *testing.T, tc *testConfig, cc *rpcConfig, checkFuncs map
 func (s) TestClientStatsUnaryRPC(t *testing.T) {
 	testClientStats(t, &testConfig{compress: ""}, &rpcConfig{success: true, failfast: false, callType: unaryRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		outPayload:    {checkOutPayload, 1},
 		inHeader:      {checkInHeader, 1},
@@ -1271,7 +1271,7 @@ func (s) TestClientStatsUnaryRPC(t *testing.T) {
 func (s) TestClientStatsUnaryRPCError(t *testing.T) {
 	testClientStats(t, &testConfig{compress: ""}, &rpcConfig{success: false, failfast: false, callType: unaryRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		outPayload:    {checkOutPayload, 1},
 		inHeader:      {checkInHeader, 1},
@@ -1298,7 +1298,7 @@ func (s) TestClientStatsClientStreamRPCError(t *testing.T) {
 	count := 1
 	testClientStats(t, &testConfig{compress: "gzip"}, &rpcConfig{count: count, success: false, failfast: false, callType: clientStreamRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		inHeader:      {checkInHeader, 1},
 		outPayload:    {checkOutPayload, 1},
@@ -1311,7 +1311,7 @@ func (s) TestClientStatsServerStreamRPC(t *testing.T) {
 	count := 5
 	testClientStats(t, &testConfig{compress: "gzip"}, &rpcConfig{count: count, success: true, failfast: false, callType: serverStreamRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		outPayload:    {checkOutPayload, 1},
 		inHeader:      {checkInHeader, 1},
@@ -1325,7 +1325,7 @@ func (s) TestClientStatsServerStreamRPCError(t *testing.T) {
 	count := 5
 	testClientStats(t, &testConfig{compress: "gzip"}, &rpcConfig{count: count, success: false, failfast: false, callType: serverStreamRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		outPayload:    {checkOutPayload, 1},
 		inHeader:      {checkInHeader, 1},
@@ -1338,7 +1338,7 @@ func (s) TestClientStatsFullDuplexRPC(t *testing.T) {
 	count := 5
 	testClientStats(t, &testConfig{compress: "gzip"}, &rpcConfig{count: count, success: true, failfast: false, callType: fullDuplexStreamRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		outPayload:    {checkOutPayload, count},
 		inHeader:      {checkInHeader, 1},
@@ -1352,7 +1352,7 @@ func (s) TestClientStatsFullDuplexRPCError(t *testing.T) {
 	count := 5
 	testClientStats(t, &testConfig{compress: "gzip"}, &rpcConfig{count: count, success: false, failfast: false, callType: fullDuplexStreamRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		outPayload:    {checkOutPayload, 1},
 		inHeader:      {checkInHeader, 1},
@@ -1439,8 +1439,8 @@ func (s) TestMultipleClientStatsHandler(t *testing.T) {
 	}
 
 	// Each RPC generates 7 stats events on the client-side, times 2 StatsHandler
-	if len(h.gotRPC) != 14 {
-		t.Fatalf("h.gotRPC: unexpected amount of RPCStats: %v != %v", len(h.gotRPC), 14)
+	if len(h.gotRPC) != 16 {
+		t.Fatalf("h.gotRPC: unexpected amount of RPCStats: %v != %v", len(h.gotRPC), 16)
 	}
 
 	// Each connection generates 4 conn events on the client-side, times 2 StatsHandler
