@@ -304,10 +304,11 @@ const (
 )
 
 type rpcConfig struct {
-	count    int  // Number of requests and responses for streaming RPCs.
-	success  bool // Whether the RPC should succeed or return error.
-	failfast bool
-	callType rpcType // Type of RPC.
+	count             int  // Number of requests and responses for streaming RPCs.
+	success           bool // Whether the RPC should succeed or return error.
+	failfast          bool
+	callType          rpcType // Type of RPC.
+	wantPickerUpdated bool
 }
 
 func (te *test) doUnaryCall(c *rpcConfig) (*testpb.SimpleRequest, *testpb.SimpleResponse, error) {
@@ -800,7 +801,6 @@ func checkPickerUpdated(t *testing.T, d *gotData, e *expectedData) {
 	}
 	if !e.wantPickerUpdated {
 		t.Logf("ignoring unexpected PickerUpdated: %+v", st)
-		return
 	}
 }
 
@@ -1237,15 +1237,16 @@ func testClientStats(t *testing.T, tc *testConfig, cc *rpcConfig, checkFuncs map
 	}
 
 	expect := &expectedData{
-		serverAddr:     te.srvAddr,
-		compression:    tc.compress,
-		method:         method,
-		requests:       reqs,
-		responses:      resps,
-		failfast:       cc.failfast,
-		err:            err,
-		isClientStream: isClientStream,
-		isServerStream: isServerStream,
+		serverAddr:        te.srvAddr,
+		compression:       tc.compress,
+		method:            method,
+		requests:          reqs,
+		responses:         resps,
+		failfast:          cc.failfast,
+		err:               err,
+		isClientStream:    isClientStream,
+		isServerStream:    isServerStream,
+		wantPickerUpdated: cc.wantPickerUpdated,
 	}
 
 	h.mu.Lock()
