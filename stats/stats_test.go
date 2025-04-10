@@ -433,17 +433,18 @@ func (te *test) doServerStreamCall(c *rpcConfig) (*testpb.StreamingOutputCallReq
 }
 
 type expectedData struct {
-	method         string
-	isClientStream bool
-	isServerStream bool
-	serverAddr     string
-	compression    string
-	reqIdx         int
-	requests       []proto.Message
-	respIdx        int
-	responses      []proto.Message
-	err            error
-	failfast       bool
+	method            string
+	isClientStream    bool
+	isServerStream    bool
+	serverAddr        string
+	compression       string
+	reqIdx            int
+	requests          []proto.Message
+	respIdx           int
+	responses         []proto.Message
+	err               error
+	failfast          bool
+	wantPickerUpdated bool
 }
 
 type gotData struct {
@@ -797,7 +798,10 @@ func checkPickerUpdated(t *testing.T, d *gotData, e *expectedData) {
 	if d.ctx == nil {
 		t.Fatalf("d.ctx = nil, want <non-nil>")
 	}
-	_ = st
+	if !e.wantPickerUpdated {
+		t.Logf("ignoring unexpected PickerUpdated: %+v", st)
+		return
+	}
 }
 
 type statshandler struct {
