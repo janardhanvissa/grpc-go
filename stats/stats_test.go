@@ -1284,7 +1284,7 @@ func (s) TestClientStatsClientStreamRPC(t *testing.T) {
 	count := 5
 	testClientStats(t, &testConfig{compress: "gzip"}, &rpcConfig{count: count, success: true, failfast: false, callType: clientStreamRPC}, map[int]*checkFuncWithCount{
 		begin:         {checkBegin, 1},
-		pickerUpdated: {checkPickerUpdated, 1},
+		pickerUpdated: {checkPickerUpdated, 2},
 		outHeader:     {checkOutHeader, 1},
 		inHeader:      {checkInHeader, 1},
 		outPayload:    {checkOutPayload, count},
