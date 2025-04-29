@@ -469,7 +469,6 @@ const (
 	// TODO: test outTrailer ?
 	connBegin
 	connEnd
-	pickerUpdated
 )
 
 func checkBegin(t *testing.T, d *gotData, e *expectedData) {
