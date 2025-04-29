@@ -291,6 +291,7 @@ func (te *test) clientConn() *grpc.ClientConn {
 	if err != nil {
 		te.t.Fatalf("grpc.NewClient(%q) = %v", te.srvAddr, err)
 	}
+	te.cc.Connect()
 	return te.cc
 }
 
