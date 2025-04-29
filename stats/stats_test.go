@@ -310,11 +310,10 @@ const (
 )
 
 type rpcConfig struct {
-	count             int  // Number of requests and responses for streaming RPCs.
-	success           bool // Whether the RPC should succeed or return error.
-	failfast          bool
-	callType          rpcType // Type of RPC.
-	wantPickerUpdated bool
+	count    int  // Number of requests and responses for streaming RPCs.
+	success  bool // Whether the RPC should succeed or return error.
+	failfast bool
+	callType rpcType // Type of RPC.
 }
 
 func (te *test) doUnaryCall(c *rpcConfig) (*testpb.SimpleRequest, *testpb.SimpleResponse, error) {
@@ -440,18 +439,17 @@ func (te *test) doServerStreamCall(c *rpcConfig) (*testpb.StreamingOutputCallReq
 }
 
 type expectedData struct {
-	method            string
-	isClientStream    bool
-	isServerStream    bool
-	serverAddr        string
-	compression       string
-	reqIdx            int
-	requests          []proto.Message
-	respIdx           int
-	responses         []proto.Message
-	err               error
-	failfast          bool
-	wantPickerUpdated bool
+	method         string
+	isClientStream bool
+	isServerStream bool
+	serverAddr     string
+	compression    string
+	reqIdx         int
+	requests       []proto.Message
+	respIdx        int
+	responses      []proto.Message
+	err            error
+	failfast       bool
 }
 
 type gotData struct {
@@ -1076,9 +1074,6 @@ func checkClientStats(t *testing.T, got []*gotData, expect *expectedData, checkF
 	var tagInfoInCtx *stats.RPCTagInfo
 	for i := 0; i < len(got); i++ {
 		if _, ok := got[i].s.(stats.RPCStats); ok {
-			if got[i].ctx == nil {
-				t.Fatalf("nil context found for stats %T", got[i].s)
-			}
 			tagInfoInCtxNew, _ := got[i].ctx.Value(rpcCtxKey{}).(*stats.RPCTagInfo)
 			if tagInfoInCtx != nil && tagInfoInCtx != tagInfoInCtxNew {
 				t.Fatalf("got context containing different tagInfo with stats %T", got[i].s)
@@ -1095,12 +1090,6 @@ func checkClientStats(t *testing.T, got []*gotData, expect *expectedData, checkF
 			}
 			checkFuncs[begin].f(t, s, expect)
 			checkFuncs[begin].c--
-		case *stats.PickerUpdated:
-			if checkFuncs[pickerUpdated].c <= 0 {
-				t.Fatalf("unexpected stats: %T", s.s)
-			}
-			checkFuncs[pickerUpdated].f(t, s, expect)
-			checkFuncs[pickerUpdated].c--
 		case *stats.OutHeader:
 			if checkFuncs[outHeader].c <= 0 {
 				t.Fatalf("unexpected stats: %T", s.s)
@@ -1230,16 +1219,15 @@ func testClientStats(t *testing.T, tc *testConfig, cc *rpcConfig, checkFuncs map
 	}
 
 	expect := &expectedData{
-		serverAddr:        te.srvAddr,
-		compression:       tc.compress,
-		method:            method,
-		requests:          reqs,
-		responses:         resps,
-		failfast:          cc.failfast,
-		err:               err,
-		isClientStream:    isClientStream,
-		isServerStream:    isServerStream,
-		wantPickerUpdated: cc.wantPickerUpdated,
+		serverAddr:     te.srvAddr,
+		compression:    tc.compress,
+		method:         method,
+		requests:       reqs,
+		responses:      resps,
+		failfast:       cc.failfast,
+		err:            err,
+		isClientStream: isClientStream,
+		isServerStream: isServerStream,
 	}
 
 	h.mu.Lock()
@@ -1423,7 +1411,7 @@ func (s) TestMultipleClientStatsHandler(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Each RPC generates 7 stats events on the client-side, times 2 StatsHandler
+	// Each RPC generates 6 stats events on the client-side, times 2 StatsHandler
 	if len(h.gotRPC) != 12 {
 		t.Fatalf("h.gotRPC: unexpected amount of RPCStats: %v != %v", len(h.gotRPC), 12)
 	}
