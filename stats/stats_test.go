@@ -275,6 +275,7 @@ func (te *test) clientConn() *grpc.ClientConn {
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUserAgent("test/0.0.1"),
+		grpc.WithBlock(),
 	}
 	if te.compress == "gzip" {
 		opts = append(opts,
